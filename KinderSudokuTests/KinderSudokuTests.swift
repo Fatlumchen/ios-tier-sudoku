@@ -16,12 +16,12 @@ struct KinderSudokuTests {
             ["🐼", "🐼"]
         ]
 
-        #expect(SudokuGameView.validateCompletedGrid(grid, size: 2) == false)
+        #expect(SudokuEngine.validateCompletedGrid(grid, size: 2) == false)
     }
 
     @Test func removeRandomCells_removesExactlyHalfOfCells() async throws {
-        let originalGrid = SudokuGameView.generateValidGrid(size: 4, emojis: ["🦁", "🐼", "🐸", "🐶"])
-        let puzzleGrid = SudokuGameView.removeRandomCells(from: originalGrid, size: 4)
+        let originalGrid = SudokuEngine.generateValidGrid(size: 4, emojis: ["🦁", "🐼", "🐸", "🐶"])
+        let puzzleGrid = SudokuEngine.removeRandomCells(from: originalGrid, size: 4)
         let emptyCells = puzzleGrid.flatMap { $0 }.filter { $0 == nil }.count
 
         #expect(emptyCells == 8)
@@ -29,11 +29,11 @@ struct KinderSudokuTests {
 
     @Test func generateValidGrid_fillsAllCellsForNineByNine() async throws {
         let emojis = ["🦁", "🐼", "🐸", "🐶", "🐷", "🦊", "🐹", "🐰", "🐻"]
-        let grid = SudokuGameView.generateValidGrid(size: 9, emojis: emojis)
+        let grid = SudokuEngine.generateValidGrid(size: 9, emojis: emojis)
         let hasNil = grid.flatMap { $0 }.contains(nil)
 
         #expect(hasNil == false)
-        #expect(SudokuGameView.validateCompletedGrid(grid, size: 9) == true)
+        #expect(SudokuEngine.validateCompletedGrid(grid, size: 9) == true)
     }
 
     @Test func validateCompletedGrid_rejectsDuplicateInSubgrid() async throws {
@@ -44,7 +44,7 @@ struct KinderSudokuTests {
             ["🐼", "🦁", "🐶", "🐸"]
         ]
 
-        #expect(SudokuGameView.validateCompletedGrid(grid, size: 4) == false)
+        #expect(SudokuEngine.validateCompletedGrid(grid, size: 4) == false)
     }
 
 }
