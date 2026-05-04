@@ -10,69 +10,88 @@ import SwiftUI
 import AVFoundation // Für Soundeffekte
 
 struct SudokuGameView: View {
+    private static let baseAnimalEmojis = ["🦁", "🐼", "🐸", "🐶", "🐷", "🦊", "🐹", "🐰", "🐻"]
     let gridSize: Int
     @State private var grid: [[String?]] = []
+    @State private var fixedCells: [[Bool]] = []
     @State private var selectedEmoji: String? = nil
     @State private var showSuccessAlert = false
     @State private var player: AVAudioPlayer?
     
     // Emojis, die verwendet werden, basierend auf der Größe des Spiels
     var animalEmojis: [String] {
-        Array(["🦁", "🐼", "🐸", "🐶", "🐷", "🦊", "🐹", "🐰", "🐻"].prefix(gridSize))
+        Array(Self.baseAnimalEmojis.prefix(gridSize))
+    }
+    
+    var pickerColumns: [GridItem] {
+        gridSize == 4
+            ? Array(repeating: GridItem(.flexible(), spacing: 10), count: 4)
+            : Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
     }
 
     init(gridSize: Int) {
         self.gridSize = gridSize
-        let fullGrid = SudokuGameView.generateValidGrid(size: gridSize, emojis: Array(["🦁", "🐼", "🐸", "🐶", "🐷", "🦊", "🐹", "🐰", "🐻"].prefix(gridSize)))
-        self._grid = State(initialValue: SudokuGameView.removeRandomCells(from: fullGrid, size: gridSize))
+        let fullGrid = SudokuGameView.generateValidGrid(size: gridSize, emojis: Array(Self.baseAnimalEmojis.prefix(gridSize)))
+        let puzzleGrid = SudokuGameView.removeRandomCells(from: fullGrid, size: gridSize)
+        self._grid = State(initialValue: puzzleGrid)
+        self._fixedCells = State(initialValue: puzzleGrid.map { row in row.map { $0 != nil } })
     }
 
     var body: some View {
-        VStack {
-            VStack(spacing: 2) {
-                ForEach(0..<gridSize, id: \.self) { row in
-                    HStack(spacing: 2) {
-                        ForEach(0..<gridSize, id: \.self) { col in
-                            SudokuCell(emoji: grid[row][col]) {
-                                if grid[row][col] == nil, let selectedEmoji = selectedEmoji {
-                                    grid[row][col] = selectedEmoji
-                                    playSound(named: "click")
-                                    checkForSuccess()
+        GeometryReader { geometry in
+            VStack {
+                VStack(spacing: 2) {
+                    ForEach(0..<gridSize, id: \.self) { row in
+                        HStack(spacing: 2) {
+                            ForEach(0..<gridSize, id: \.self) { col in
+                                SudokuCell(emoji: grid[row][col], isFixed: fixedCells[row][col], cellSize: cellSize(for: geometry.size.width)) {
+                                    if !fixedCells[row][col] {
+                                        grid[row][col] = selectedEmoji
+                                        playSound(named: "click")
+                                        checkForSuccess()
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
-            .padding()
-            .background(Color.gray.opacity(0.2))
-            .cornerRadius(10)
-            
-            // Emoji-Auswahl
-            let columns: [GridItem] = gridSize == 4
-                ? Array(repeating: GridItem(.flexible(), spacing: 10), count: 4)
-                : Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
-            
-            LazyVGrid(columns: columns, spacing: 10) {
-                ForEach(animalEmojis, id: \.self) { emoji in
+                .padding()
+                .background(Color.gray.opacity(0.2))
+                .cornerRadius(10)
+
+                LazyVGrid(columns: pickerColumns, spacing: 10) {
                     Button(action: {
                         withAnimation(.easeInOut(duration: 0.2)) {
-                            selectedEmoji = emoji
+                            selectedEmoji = nil
                         }
-                        playSound(named: "click")
                     }) {
-                        Text(emoji)
+                        Text("🧽")
                             .font(.system(size: gridSize == 4 ? 40 : 30))
                             .padding()
-                            .background(selectedEmoji == emoji ? Color.blue.opacity(0.2) : Color.clear)
+                            .background(selectedEmoji == nil ? Color.orange.opacity(0.25) : Color.clear)
                             .clipShape(Circle())
-                            .scaleEffect(selectedEmoji == emoji ? 1.2 : 1) // Animation
+                    }
+
+                    ForEach(animalEmojis, id: \.self) { emoji in
+                        Button(action: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                selectedEmoji = emoji
+                            }
+                            playSound(named: "click")
+                        }) {
+                            Text(emoji)
+                                .font(.system(size: gridSize == 4 ? 40 : 30))
+                                .padding()
+                                .background(selectedEmoji == emoji ? Color.blue.opacity(0.2) : Color.clear)
+                                .clipShape(Circle())
+                                .scaleEffect(selectedEmoji == emoji ? 1.2 : 1) // Animation
+                        }
                     }
                 }
+                .padding(.top, 20)
+
+                Spacer()
             }
-            .padding(.top, 20)
-            
-            Spacer()
         }
         .padding()
         .background(Color.white)
@@ -87,22 +106,10 @@ struct SudokuGameView: View {
     }
 
     private func checkForSuccess() {
-        for row in grid {
-            if row.contains(nil) {
-                return
-            }
+        if !Self.validateCompletedGrid(grid, size: gridSize) {
+            return
         }
-        
-        for col in 0..<gridSize {
-            var columnValues: [String?] = []
-            for row in 0..<gridSize {
-                columnValues.append(grid[row][col])
-            }
-            if Set(columnValues).count != gridSize {
-                return
-            }
-        }
-        
+
         playSound(named: "success")
         showSuccessAlert = true
     }
@@ -113,22 +120,37 @@ struct SudokuGameView: View {
         player?.play()
     }
 
+    private func cellSize(for availableWidth: CGFloat) -> CGFloat {
+        max(26, min(44, (availableWidth - 32) / CGFloat(gridSize)))
+    }
+
     static func generateValidGrid(size: Int, emojis: [String]) -> [[String?]] {
+        let symbols = Array(emojis.prefix(size))
+        guard symbols.count == size else {
+            return Array(repeating: Array(repeating: nil, count: size), count: size)
+        }
+
         var grid: [[String?]] = Array(repeating: Array(repeating: nil, count: size), count: size)
 
-        for row in 0..<size {
-            var availableEmojis = emojis.shuffled()
-            for col in 0..<size {
-                for emoji in availableEmojis {
-                    if isValidPlacement(grid: grid, row: row, col: col, emoji: emoji) {
-                        grid[row][col] = emoji
-                        availableEmojis.removeAll { $0 == emoji }
-                        break
+        func fillCell(_ index: Int) -> Bool {
+            if index == size * size { return true }
+
+            let row = index / size
+            let col = index % size
+
+            for emoji in symbols.shuffled() {
+                if isValidPlacement(grid: grid, row: row, col: col, emoji: emoji, size: size) {
+                    grid[row][col] = emoji
+                    if fillCell(index + 1) {
+                        return true
                     }
+                    grid[row][col] = nil
                 }
             }
+            return false
         }
-        
+
+        _ = fillCell(0)
         return grid
     }
 
@@ -136,28 +158,71 @@ struct SudokuGameView: View {
         var modifiedGrid = grid
         let totalCells = size * size
         let cellsToRemove = totalCells / 2 // 50% der Felder leer lassen
-        
-        for _ in 0..<cellsToRemove {
-            let randomRow = Int.random(in: 0..<size)
-            let randomCol = Int.random(in: 0..<size)
-            modifiedGrid[randomRow][randomCol] = nil
+
+        let indicesToRemove = Array(0..<totalCells).shuffled().prefix(cellsToRemove)
+        for index in indicesToRemove {
+            let row = index / size
+            let col = index % size
+            modifiedGrid[row][col] = nil
         }
-        
+
         return modifiedGrid
     }
 
-    static func isValidPlacement(grid: [[String?]], row: Int, col: Int, emoji: String) -> Bool {
-        // Überprüfen der Zeile
-        for c in 0..<grid[row].count {
-            if grid[row][c] == emoji {
+    static func validateCompletedGrid(_ grid: [[String?]], size: Int) -> Bool {
+        guard grid.count == size else { return false }
+
+        for row in grid {
+            guard row.count == size, !row.contains(nil), Set(row.compactMap { $0 }).count == size else {
                 return false
             }
         }
 
-        // Überprüfen der Spalte
-        for r in 0..<grid.count {
-            if grid[r][col] == emoji {
+        for col in 0..<size {
+            let columnValues = (0..<size).compactMap { grid[$0][col] }
+            if columnValues.count != size || Set(columnValues).count != size {
                 return false
+            }
+        }
+
+        let blockSize = Int(Double(size).squareRoot())
+        if blockSize * blockSize == size {
+            for blockRow in stride(from: 0, to: size, by: blockSize) {
+                for blockCol in stride(from: 0, to: size, by: blockSize) {
+                    var blockValues: [String] = []
+                    for row in blockRow..<(blockRow + blockSize) {
+                        for col in blockCol..<(blockCol + blockSize) {
+                            guard let value = grid[row][col] else { return false }
+                            blockValues.append(value)
+                        }
+                    }
+                    if Set(blockValues).count != size {
+                        return false
+                    }
+                }
+            }
+        }
+
+        return true
+    }
+
+    static func isValidPlacement(grid: [[String?]], row: Int, col: Int, emoji: String, size: Int) -> Bool {
+        for c in 0..<size where grid[row][c] == emoji {
+            return false
+        }
+
+        for r in 0..<size where grid[r][col] == emoji {
+            return false
+        }
+
+        let blockSize = Int(Double(size).squareRoot())
+        if blockSize * blockSize == size {
+            let startRow = (row / blockSize) * blockSize
+            let startCol = (col / blockSize) * blockSize
+            for r in startRow..<(startRow + blockSize) {
+                for c in startCol..<(startCol + blockSize) where grid[r][c] == emoji {
+                    return false
+                }
             }
         }
 
@@ -167,18 +232,20 @@ struct SudokuGameView: View {
 
 struct SudokuCell: View {
     var emoji: String?
+    var isFixed: Bool
+    var cellSize: CGFloat
     var onTap: () -> Void
 
     var body: some View {
         ZStack {
             Rectangle()
-                .fill(emoji != nil ? Color.gray.opacity(0.2) : Color.white)
-                .frame(width: 40, height: 40)
+                .fill(isFixed ? Color.gray.opacity(0.35) : Color.white)
+                .frame(width: cellSize, height: cellSize)
                 .border(Color.gray, width: 1)
 
             if let emoji = emoji {
                 Text(emoji)
-                    .font(.system(size: 30))
+                    .font(.system(size: cellSize * 0.62))
             }
         }
         .onTapGesture {
